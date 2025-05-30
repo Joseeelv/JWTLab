@@ -37,11 +37,11 @@ mpm install
 ```
 
 3. **Set environment variables (optional):**
-````bash
+```bash
 echo "JWT_SECRET=your_secret_key_here" > .env
 ```
 4. **Start the server:**
-````bash
+```bash
 npm start
 ```
 5. **Access the lab:**
