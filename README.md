@@ -55,10 +55,6 @@ npm start
 - **Profile:** `/profile`
 - **Admin:** `/admin`
 
-## Exploitation Guide
-
-Refer to the [blog post](#) or the project documentation for step-by-step instructions on exploiting each vulnerability.
-
 ## Example Exploit: alg:none Bypass
 
 1. **Log in as a regular user.**
