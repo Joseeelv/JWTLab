@@ -27,7 +27,7 @@ A hands-on, intentionally vulnerable Node.js backend designed to demonstrate and
 ### Installation
 
 1. **Clone the repository:**
-````bash
+```bash
 git clone https://github.com/yourusername/jwt-security-lab.git
 cd jwt-security-lab
 ```
