@@ -1,12 +1,15 @@
-require("dotenv").config();
+const dotenv = require("dotenv");
+dotenv.config();
 
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
-const app = express();
+const fs = require("fs");
+const path = require("path");
 
+const app = express();
 const PORT = 3000;
 const FRONTEND_ORIGIN = "http://localhost:8000";
 
@@ -25,12 +28,7 @@ app.use(cookieParser());
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret_key_here";
 console.log("JWT_SECRET:", JWT_SECRET);
 
-// In-memory "database"
-const users = [];
-users.push({ user: "admin", password: "admin" });
-console.log(users);
-
-// Vulnerability flags
+// Vulnerable flags
 const FLAGS = {
   ALG_NONE: "FLAG{alg_none_bypass}",
   ALG_CONFUSION: "FLAG{algorithm_confusion}",
@@ -38,134 +36,166 @@ const FLAGS = {
   PAYLOAD_TAMPERING: "FLAG{payload_tampering}",
 };
 
-// Registration endpoint
+// Fake key store simulating insecure key management
+const fakeKeyStore = {
+  "default-key": Buffer.from(JWT_SECRET),
+  "malicious-key": Buffer.from("fake-key-for-exploit"),
+  ed2Nf8sb: Buffer.from("claveSegura123"),
+  "dev-null": Buffer.from(""),
+};
+
+// Custom JWT header
+const CUSTOM_HEADER = {
+  alg: "HS256",
+  typ: "JWT",
+  kid: "ed2Nf8sb",
+};
+
+// Path to /app/etc/passwd.txt
+const passwdDir = "/app/etc";
+const passwdPath = path.join(passwdDir, "passwd.txt");
+
+// Create directory if it does not exist
+if (!fs.existsSync(passwdDir)) {
+  fs.mkdirSync(passwdDir, { recursive: true });
+}
+
+// Validate user by reading passwd.txt
+function isValidUser(user, password) {
+  try {
+    if (!fs.existsSync(passwdPath)) return false;
+
+    const lines = fs.readFileSync(passwdPath, "utf8").split("\n");
+
+    for (const line of lines) {
+      const [u, p] = line.trim().split(":");
+      if (u === user && p === password) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch (err) {
+    console.error("Error reading /app/etc/passwd.txt:", err);
+    return false;
+  }
+}
+
+// User registration
 app.post("/register", (req, res) => {
   const { user, password } = req.body;
 
-  if (!user || !password) {
-    return res.status(400).json({ error: "Username and password required" });
+  if (
+    typeof user !== "string" ||
+    typeof password !== "string" ||
+    !user ||
+    !password
+  ) {
+    return res.status(400).json({ error: "User and password are required" });
   }
 
-  if (users.find((u) => u.user === user)) {
-    return res.status(409).json({ error: "User already exists" });
-  }
+  console.log(`[REGISTER] User: ${user}, Password: ${password}`); // <-- Here
 
-  users.push({ user, password });
-  res.json({ message: "User registered successfully" });
+  const entry = `${user}:${password}\n`;
+
+  try {
+    fs.appendFileSync(passwdPath, entry, "utf8");
+    res.json({ message: "User registered" });
+  } catch (err) {
+    console.error("Error writing to /app/etc/passwd.txt", err);
+    res.status(500).json({ error: "Failed to register" });
+  }
 });
-
-// Login endpoint
+// Login with JWT
 app.post("/login", (req, res) => {
   const { user, password } = req.body;
-  console.log("Cookies on login:", req.cookies);
-  if (!user || !password) {
-    return res.status(400).json({ error: "Username and password required" });
+
+  if (
+    typeof user !== "string" ||
+    typeof password !== "string" ||
+    !user ||
+    !password
+  ) {
+    return res.status(400).json({ error: "Missing credentials" });
   }
 
-  const userFound = users.find((u) => u.user === user);
-  if (!userFound) return res.status(401).json({ error: "User not found" });
+  console.log(`[LOGIN] User: ${user}, Password: ${password}`); // <-- Here
 
-  if (userFound.password !== password) {
-    return res.status(401).json({ error: "Invalid password" });
+  const valid = isValidUser(user, password);
+
+  if (!valid) {
+    return res.status(401).json({ error: "Invalid login" });
   }
 
-  // Signing token with HS256 and including isAdmin boolean
-  const token = jwt.sign(
-    { user, isAdmin: userFound.user === "admin" },
-    JWT_SECRET,
-    { algorithm: "HS256" }
-  );
+  const token = jwt.sign({ user, isAdmin: user === "admin" }, JWT_SECRET, {
+    algorithm: "HS256",
+    header: CUSTOM_HEADER,
+  });
 
   res.cookie("token", token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production" ? true : false,
+    secure: false,
     sameSite: "lax",
     maxAge: 3600000,
   });
 
-  res.json({
-    message: "Login successful",
-    isAdmin: userFound.user === "admin",
-  });
+  res.json({ message: "Login successful", isAdmin: user === "admin" });
 });
 
-// Profile endpoint: vulnerable to all JWT attacks
 app.get("/profile", (req, res) => {
-  console.log("Cookies received:", req.cookies);
   const token = req.cookies.token;
-  if (!token) return res.status(401).json({ error: "Token required" });
+  if (!token) return res.status(401).json({ error: "Token missing" });
 
   try {
-    // Decode JWT header
+    // Decode header without verifying
     const header = JSON.parse(
       Buffer.from(token.split(".")[0], "base64").toString()
     );
+    const keyId = header.kid || "default-key";
 
-    // Vulnerability: alg:none bypass
-    if (header.alg === "none") {
-      const payload = JSON.parse(
-        Buffer.from(token.split(".")[1], "base64").toString()
-      );
-      return res.json({
-        message: `Hi ${payload.user}! Welcome to the vulnerable lab.`,
-        isAdmin: true,
-        flag: FLAGS.ALG_NONE,
-        redirectToAdmin: true,
-      });
+    if (keyId.includes("../") || keyId.includes("/") || keyId.includes("\\")) {
+      try {
+        // Try to read the file indicated in kid
+        const fileContent = fs.readFileSync(keyId, "utf8");
+        return res.json({
+          message: "Kid injection successful via path traversal",
+          isAdmin: true,
+          flag: FLAGS.KID_INJECTION
+        });
+      } catch (err) {
+        console.error("Error reading file from kid:", err);
+        return res
+          .status(400)
+          .json({ error: "Cannot read file from kid: " + err.message });
+      }
     }
 
-    // Vulnerability: kid injection simulation
-    if (header.kid && header.kid.includes("' OR 1=1 --")) {
-      const decoded = jwt.verify(token, JWT_SECRET, {
-        algorithms: ["HS256", "none"],
-      });
-      return res.json({
-        user: decoded.user,
-        isAdmin: true,
-        flag: FLAGS.KID_INJECTION,
-        redirectToAdmin: true,
-      });
-    }
+    // If not path traversal, verify JWT normally
+    const verificationKey = fakeKeyStore[keyId] || JWT_SECRET;
 
-    // Vulnerability: algorithm confusion forced by query param
-    if (req.query.forceConfusion) {
-      const decoded = jwt.verify(token, JWT_SECRET, {
-        algorithms: ["HS256", "none"],
-      });
-      return res.json({
-        user: decoded.user,
-        isAdmin: true,
-        flag: FLAGS.ALG_CONFUSION,
-        redirectToAdmin: true,
-      });
-    }
-
-    // Normal token verification
-    const decoded = jwt.verify(token, JWT_SECRET, {
-      algorithms: ["HS256", "none"],
+    const decoded = jwt.verify(token, verificationKey, {
+      algorithms: ["HS256", "RS256", "none"],
+      ignoreExpiration: true,
     });
 
-    // Payload tampering: if isAdmin true but user is not admin
+    // Further checks
     if (decoded.isAdmin && decoded.user !== "admin") {
       return res.json({
+        message: "Payload tampering detected",
         user: decoded.user,
         isAdmin: true,
         flag: FLAGS.PAYLOAD_TAMPERING,
-        redirectToAdmin: true,
       });
     }
 
-    // Default response
-    res.json({
-      message: `Hi ${decoded.user}! Welcome to the vulnerable lab.`,
-    });
-  } catch (e) {
-    console.error("Error validating token:", e.message);
+    res.json({ message: `Hello ${decoded.user}`, isAdmin: decoded.isAdmin });
+  } catch (err) {
+    console.error("Token validation error:", err.message);
     res.status(401).json({ error: "Invalid token" });
   }
 });
 
-// Admin endpoint: vulnerable to all JWT attacks
+// Admin route
 app.get("/admin", (req, res) => {
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ error: "Token required" });
@@ -174,75 +204,24 @@ app.get("/admin", (req, res) => {
     const header = JSON.parse(
       Buffer.from(token.split(".")[0], "base64").toString()
     );
+    const keyId = header.kid || "default-key";
+    const verificationKey = fakeKeyStore[keyId] || JWT_SECRET;
 
-    if (header.alg === "none") {
-      const payload = JSON.parse(
-        Buffer.from(token.split(".")[1], "base64").toString()
-      );
-      if (payload.isAdmin) {
-        return res.json({
-          message: "Welcome, admin!",
-          isAdmin: true,
-          flag: FLAGS.ALG_NONE,
-        });
-      } else {
-        return res.status(403).json({ error: "No admin privileges" });
-      }
-    }
-
-    if (header.kid && header.kid.includes("' OR 1=1 --")) {
-      const decoded = jwt.verify(token, JWT_SECRET, {
-        algorithms: ["HS256", "none"],
-      });
-      if (decoded.isAdmin) {
-        return res.json({
-          message: "Welcome, admin!",
-          isAdmin: true,
-          flag: FLAGS.KID_INJECTION,
-        });
-      } else {
-        return res.status(403).json({ error: "No admin privileges" });
-      }
-    }
-
-    if (req.query.forceConfusion) {
-      const decoded = jwt.verify(token, JWT_SECRET, {
-        algorithms: ["HS256", "none"],
-      });
-      if (decoded.isAdmin) {
-        return res.json({
-          message: "Welcome, admin!",
-          isAdmin: true,
-          flag: FLAGS.ALG_CONFUSION,
-        });
-      } else {
-        return res.status(403).json({ error: "No admin privileges" });
-      }
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET, {
-      algorithms: ["HS256", "none"],
+    const decoded = jwt.verify(token, verificationKey, {
+      algorithms: ["HS256", "RS256", "none"],
+      ignoreExpiration: true,
     });
-
-    if (decoded.isAdmin && decoded.user !== "admin") {
-      return res.json({
-        message: "Welcome, admin!",
-        isAdmin: true,
-        flag: FLAGS.PAYLOAD_TAMPERING,
-      });
-    }
 
     if (decoded.isAdmin) {
       return res.json({ message: "Welcome, admin!", isAdmin: true });
-    } else {
-      return res.status(403).json({ error: "No admin privileges" });
     }
-  } catch (e) {
+
+    res.status(403).json({ error: "Not an admin" });
+  } catch (err) {
     res.status(401).json({ error: "Invalid token" });
   }
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`Vulnerable JWT Lab running on http://localhost:${PORT}`);
 });

@@ -4,6 +4,8 @@ services:
     build: ./app
     ports:
       - "3000:3000"
+    volumes:
+      - ./app/etc:/app/etc
     environment:
       - JWT_SECRET=claveSegura123
     networks:
