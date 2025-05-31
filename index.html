@@ -86,9 +86,11 @@
 
         const response = await fetch(`${API_URL}/login`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ user: username, password: password }),
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ user: username, password })
         });
 
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -112,8 +114,11 @@
       try {
         const response = await fetch(`${API_URL}/register`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user: username, password: password }),
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ user: username, password }),
         });
 
         if (!response.ok) {
