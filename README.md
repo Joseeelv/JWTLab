@@ -28,25 +28,22 @@ A hands-on, intentionally vulnerable Node.js backend designed to demonstrate and
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/yourusername/jwt-security-lab.git
-cd jwt-security-lab
+git clone https://github.com/Joseeelv/JWTLab.git
+cd JWTLab
 ```
-2. **Install dependencies:**
-```bash
-mpm install
-```
+2. **Install Docker:**
+- You can download it [here](https://www.docker.com/)
 
 3. **Set environment variables (optional):**
 ```bash
 echo "JWT_SECRET=your_secret_key_here" > .env
 ```
-4. **Start the server:**
+4. **Start the Docker:**
 ```bash
-npm start
+docker-compose up --build
 ```
 5. **Access the lab:**
-- **Backend:** `http://localhost:3000`
-- **Recommended Frontend:** Use the provided frontend or connect your own at `http://localhost:8000`
+- Connect your own at `http://localhost:8000`
 
 ## Lab Structure
 
@@ -57,11 +54,11 @@ npm start
 
 ## Example Exploit: alg:none Bypass
 
-1. **Log in as a regular user.**
-2. **Capture the JWT using Burp Suite or browser tools.**
-3. **Modify the token header to `"alg": "none"` and set `"isAdmin": true`.**
-4. **Remove the signature and send the token to `/profile` or `/admin`.**
-5. **Observe admin access and receive the flag: `FLAG{alg_none_bypass}`.**
+1. Log in as a regular use.
+2. Capture the JWT using Burp Suite or browser tools.**
+3. Modify the token header to `"alg": "none"` and set `"isAdmin": true`.
+4. Remove the signature and send the token to `/profile` or `/admin`.
+5. Observe admin access and receive the flag: `FLAG{alg_none_bypass}`.
 
 ## Acknowledgments
 
